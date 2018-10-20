@@ -12,6 +12,8 @@ to compile and
 
 to run
 
+All of this assumes java 8 is already installed on the system.
+
 
 foo.txt is a basic testcase
 
