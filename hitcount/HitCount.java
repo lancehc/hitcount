@@ -25,6 +25,41 @@ public class HitCount {
     //                      W is just an upper bound on the number of websites visited each day, but it depends on
     //                      how many rarely visited websites are in the file.
 
+    private static class HitCounts {
+        private final Map<String, Long> hitCountByWebsite;
+        private final Map<Long, Set<String>> websiteByHitCount;
+
+        public HitCounts() {
+            hitCountByWebsite = new HashMap<>();
+            websiteByHitCount = new HashMap<>();
+        }
+
+        public void addHit(String website) {
+            if(!hitCountByWebsite.containsKey(website)) {
+                hitCountByWebsite.put(website, 0L);
+            }
+            long oldHitCount = hitCountByWebsite.get(website);
+            long newHitCount = oldHitCount + 1;
+            hitCountByWebsite.put(website, newHitCount);
+
+            if(websiteByHitCount.containsKey(oldHitCount)) {
+                Set<String> websitesAtOldHitCount = websiteByHitCount.get(oldHitCount);
+                websitesAtOldHitCount.remove(website);
+                if(websitesAtOldHitCount.isEmpty()) {
+                    websiteByHitCount.remove(oldHitCount);
+                }
+            }
+
+            if(!websiteByHitCount.containsKey(newHitCount)) {
+                websiteByHitCount.put(newHitCount, new HashSet<>());
+            }
+            websiteByHitCount.get(newHitCount).add(website);
+        }
+
+        public Map<Long, Set<String>> getWebsiteByHitCount() {
+            return websiteByHitCount;
+        }
+    }
 
     // Normally I'd use guava's Preconditions version of this, but I wanted to avoid using non standard libs
     private static void checkArgument(boolean check, String message) {
@@ -41,19 +76,15 @@ public class HitCount {
         return daysSinceEpoch * DAY_IN_MILLIS;
     }
 
-    private static void addToHitCounts(long day, String website, Map<Long, Map<String, Long>> hitCountsByDay) {
+    private static void addToHitCounts(long day, String website, Map<Long, HitCounts> hitCountsByDay) {
         if(!hitCountsByDay.containsKey(day)) {
-            hitCountsByDay.put(day, new HashMap<>());
+            hitCountsByDay.put(day, new HitCounts());
         }
-        Map<String, Long> hitCounts = hitCountsByDay.get(day);
-        if(!hitCounts.containsKey(website)) {
-            hitCounts.put(website, 0L);
-        }
-        hitCounts.put(website, hitCounts.get(website) + 1);
+        hitCountsByDay.get(day).addHit(website);
     }
 
-    private static Map<Long, Map<String, Long>> countHitsByDay(Stream<String> lines) {
-        Map<Long, Map<String, Long>> hitCountsByDay = new HashMap<>();
+    private static Map<Long, HitCounts> countHitsByDay(Stream<String> lines) {
+        Map<Long, HitCounts> hitCountsByDay = new HashMap<>();
         lines.forEach(line -> {
             String[] parts = line.split("\\|");
             checkArgument(parts.length == 2, "Each line in input file must have exactly one '|' character.  Offending line: " + line);
@@ -69,20 +100,18 @@ public class HitCount {
         System.out.println(formattedDate + " GMT");
     }
 
-    private static Iterable<Map.Entry<String, Long>> getOrderedEntrySet(Map<String, Long> hitCounts) {
-        Comparator<Map.Entry<String, Long>> hitCountAscending = Comparator.comparing(Map.Entry::getValue);
-        Comparator<Map.Entry<String, Long>> hitCountDescending = hitCountAscending.reversed();
-        List<Map.Entry<String, Long>> entries = new ArrayList<>(hitCounts.entrySet());
-        entries.sort(hitCountDescending);
-        return entries;
+    private static void printHitCounts(HitCounts hitCounts) {
+        Map<Long, Set<String>> websiteByHitCount = hitCounts.getWebsiteByHitCount();
+        TreeSet<Long> orderedHitCounts = new TreeSet<>(Comparator.reverseOrder());
+        orderedHitCounts.addAll(websiteByHitCount.keySet());
+        for(Long hitCount : orderedHitCounts) {
+            for(String website : websiteByHitCount.get(hitCount)) {
+                System.out.println(website + " " + hitCount);
+            }
+        }
     }
 
-    private static void printHitCounts(Map<String, Long> hitCounts) {
-        Iterable<Map.Entry<String, Long>> sortedEntries = getOrderedEntrySet(hitCounts);
-        sortedEntries.forEach(entry -> System.out.println(entry.getKey() + " " + entry.getValue()));
-    }
-
-    private static void printHitCountsByDay(Map<Long, Map<String, Long>> hitCountsByDay) {
+    private static void printHitCountsByDay(Map<Long, HitCounts> hitCountsByDay) {
         SortedSet<Long> sortedDays = new TreeSet<>(hitCountsByDay.keySet());
         SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/YYYY");
         dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
@@ -96,7 +125,7 @@ public class HitCount {
         checkArgument(args.length == 1, "Input should be filename");
         String filename = args[0];
         Stream<String> lines = Files.lines(Paths.get(filename));
-        Map<Long, Map<String, Long>> hitCountsByDay = countHitsByDay(lines);
+        Map<Long, HitCounts> hitCountsByDay = countHitsByDay(lines);
         printHitCountsByDay(hitCountsByDay);
     }
 }
